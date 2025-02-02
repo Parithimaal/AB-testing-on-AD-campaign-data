@@ -27,7 +27,7 @@ library(lmtest)
 View dataset structure
 
 ```{r}
-data <- read_csv("AB-Testing-on-Web-Analytics-Data/Data Files/marketing_AB.csv")
+data <- read_csv("AB-testing-on-AD-campaign-data/Data Files/marketing_AB.csv")
 glimpse(data)
 ```
 
