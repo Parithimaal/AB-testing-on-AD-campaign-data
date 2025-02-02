@@ -230,7 +230,7 @@ lrtest(logit_model_int_INTtest_groupANDmost_ads_hour, logit_model_no_interaction
 
 # Findings
 
-### 1. Ad spending should be increased ad there was significant difference
+### 1. Ad spending could be increased as there was significant difference
 
 The psa group has significantly lower conversion rates (52.5% less likely to convert) than the AD group.
 
