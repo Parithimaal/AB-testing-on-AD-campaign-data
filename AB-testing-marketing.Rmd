@@ -1,0 +1,253 @@
+---
+title: "A/B Testing on Ad campaign"
+author: "Balaji Adithya Dhandapani Shanmugasundaram"
+date: "2023-08-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+```
+
+# Load necessary libraries and reading csv
+
+```{r}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+library(car)
+library(DescTools)
+library(lmtest)
+```
+
+# Data Preprocessing
+
+View dataset structure
+
+```{r}
+data <- read_csv("AB-Testing-on-Web-Analytics-Data/Data Files/marketing_AB.csv")
+glimpse(data)
+```
+
+Dropping, renaming and converting columns
+
+```{r}
+#Dropping
+data <- data %>% select(-c(`...1`, `user id`))
+
+#Renaming
+colnames(data) <- c("test_group", "converted", "total_ads", "most_ads_day", "most_ads_hour")
+
+#Converting data type
+data$converted <- ifelse(data$converted == 'TRUE', 1, 0)
+data$test_group <- as.factor(data$test_group)
+data$most_ads_hour <- as.factor(data$most_ads_hour)
+data$most_ads_day <- as.factor(data$most_ads_day)
+#data$converted <- as.factor(data$converted) # mutating converted to 0,1
+```
+
+Checking empty values
+
+```{r}
+colSums(is.na(data))
+```
+
+# EDA
+
+```{r}
+ulst <- lapply(data, unique)
+ulst
+```
+
+```{r}
+summary(data)
+```
+
+**Interpretation:**
+
+1.  The test_group is heavily skewed, only 4.1% of the records are psa
+
+2.  The Conversion rate was quite low, at about 2.4%
+
+3.  Participants saw ads with a median of 13
+
+4.  Friday and Monday were the days, most number of ads were shown and Tuesday and Wednesday were the least.
+
+5.  Most ads were displayed from 11am to 3pm
+
+Comparing conversion rates between the two classes of feature:converted
+
+```{r}
+data$converted <- as.numeric(data$converted) # mutating converted to 0,1
+# Conversion rates by test group
+conversion_rates <- data %>%
+  group_by(test_group) %>%
+  summarise(
+    total_count = n(),
+    converted_count = sum(converted),
+    conversion_rate = (converted_count / total_count) * 100
+  )
+
+print(conversion_rates)
+```
+
+**Observation:** The conversion rates are 2.55% and 1.79% for ad and psa classes respectively.
+
+Comparing Distribution of Total Ads by Test Group
+
+```{r}
+ggplot(data, aes(x = test_group, y = total_ads, fill = test_group)) +
+  geom_boxplot() +
+  labs(title = "Distribution of Total Ads by Test Group", x = "Test Group", y = "Total Ads") +
+  theme_minimal()
+```
+
+**Observation:** Both distributions(for ad and psa) are highly right-skewed. The bulk of the data for both groups appears to be concentrated in the lower range (close to 0).
+
+Comparing Most Ads Served by Day by Test Group
+
+```{r}
+ggplot(data, aes(x = most_ads_day, fill = test_group)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Most Ads Served by Day", x = "Day of the Week", y = "Count") +
+  theme_minimal()
+```
+
+**Observation:** The trend of most ads served by day differs between the two groups.
+
+Comparing Most Ads Served by Test Group
+
+```{r}
+data$most_ads_hour <- as.numeric(data$most_ads_hour)
+ggplot(data, aes(x = most_ads_hour, fill = test_group)) +
+  geom_histogram(binwidth = 1, alpha = 0.7, position = "dodge") +
+  labs(title = "Distribution of Most Ads Served by Hour", x = "Hour of the Day", y = "Count") +
+  theme_minimal()
+```
+
+**Observation:** The trend of most ads served by hours is similar among the two groups.
+
+# Tests
+
+## Chi-squared test
+
+```{r}
+
+# Create a contingency table of conversions by test group
+conversion_table <- table(data$test_group, data$converted)
+print(conversion_table)
+
+# Perform the Chi-Squared test
+chi_test_result <- chisq.test(conversion_table, correct = FALSE)
+print(chi_test_result)
+
+```
+
+**Interpretation:** X-squared = 54.318, df = 1, p-value = 1.705e-13. As p\<0.05 (Significance level), we can conclude that the variables test_group and converted are dependent, thereby there exists significant difference between the conversion rates between the two groups.
+
+But we have to test for interaction between other features. Let us fit a logistic model to ascertain if there exists an interaction.
+
+### LogReg: Base model
+
+```{r}
+logit_model_no_interaction <- glm(converted ~ test_group + total_ads + most_ads_day + most_ads_hour,
+                                   data = data, family = binomial())
+
+summary(logit_model_no_interaction)  # Check significance of coefficients
+exp(coef(logit_model_no_interaction))
+```
+
+**Interpretation:**
+
+1.  Intercept = -4.795e+00, as it is negative, the baseline conversion probability is low.
+
+2.  coefficient of test_grouppsa = -3.779e-01, The psa test group has a lower conversion rate compared to the ad group. psa has a 0.68 times lower conversion than ad.
+
+3.  coefficient of total_ads =1.027e-02, each additional ad exposure increases the odds of conversion as value is postive. Percentage Change=(Odds Ratio−1)×100 = 1.03. Therefore, meaning each additional ad increases conversion odds by 1.03%.
+
+    ```{r}
+    pct_change = (1.010321885-1)*100
+    print(pct_change)
+    ```
+
+4.  Ads on Monday and Tuesday have the highest conversion rates (as highest odds ratio), while Saturday has no significant effect.
+
+### 1. LogReg: Base model + test_group and total_ads interaction
+
+```{r}
+logit_model_int_INTtest_groupANDtotal_ads <- glm(converted ~ test_group + total_ads + most_ads_day + most_ads_hour + test_group:total_ads, # Interaction term 
+                   data = data, family = binomial())
+
+summary(logit_model_int_INTtest_groupANDtotal_ads)  # Check significance of coefficients
+exp(coef(logit_model_int_INTtest_groupANDtotal_ads))  # Get odds ratios
+
+
+# Compare models with and without interaction terms
+lrtest(logit_model_int_INTtest_groupANDtotal_ads, logit_model_no_interaction)
+```
+
+**Interpretation:** Both models have the same log-likelihood, meaning adding the interaction term did not improve model fit. The p-value is greater than significance level, meaning that the interaction term is not significant.
+
+### 2. LogReg: Base model + test_group and most_ads_day interaction
+
+```{r}
+logit_model_int_INTtest_groupANDmost_ads_day <- glm(converted ~ test_group + total_ads + most_ads_day + most_ads_hour + test_group:most_ads_day, # Interaction term
+                                                 data = data, family = binomial())  
+summary(logit_model_int_INTtest_groupANDmost_ads_day)  # Check significance of coefficients
+exp(coef(logit_model_int_INTtest_groupANDmost_ads_day))  # Get odds ratios   
+
+# Compare models with and without interaction terms lrtest
+lrtest(logit_model_int_INTtest_groupANDmost_ads_day, logit_model_no_interaction)
+```
+
+**Interpretation:** The model with the interaction term has higher log-likelihood, meaning adding the interaction term improved model fit. But the p-value is greater than significance level, meaning that the interaction term is not significant.
+
+Most interactions are not significant, meaning the effect of most_ads_day is similar across ad and psa groups except for Tuesday. Tuesday had significant negative interaction, meaning that on Tuesdays, the PSA group has significantly lower conversions compared to the AD group.
+
+### 3. LogReg: Base model + test_group and total_ads interaction
+
+```{r}
+logit_model_int_INTtest_groupANDmost_ads_hour <- glm(converted ~ test_group + total_ads + most_ads_day + most_ads_hour + test_group:most_ads_hour, # Interaction term
+                                                 data = data, family = binomial())  
+summary(logit_model_int_INTtest_groupANDmost_ads_hour)  # Check significance of coefficients
+exp(coef(logit_model_int_INTtest_groupANDmost_ads_hour))  # Get odds ratios   
+
+# Compare models with and without interaction terms lrtest
+lrtest(logit_model_int_INTtest_groupANDmost_ads_hour, logit_model_no_interaction)
+```
+
+**Interpretation:** The model with the interaction term has higher log-likelihood, meaning adding the interaction term improved model fit. Moreover the p-value is lesser than significance level, meaning that the interaction term is significant. The impact of the hour at which most ads are shown (most_ads_hour) on conversion is different between the ad and psa groups.
+
+1.  Intercept = -4.795e+00, as it is negative, the baseline conversion probability is low.
+
+2.  The odds ratio = exp(-0.7439) = 0.475, meaning the psa group is about 52.5% less likely to convert than the ad group
+
+3.  Later hours in the day increase conversion probability. The odds ratio = exp(0.03312) = 1.034, meaning each additional hour increases conversion odds by about 3.4%
+
+4.  Monday and Tuesday have the highest conversion rates. Sunday and Wednesday also improve conversions, but to a lesser extent. Saturday does not show a significant impact
+
+# Findings
+
+### 1. Ad spending should be increased ad there was significant difference
+
+The psa group has significantly lower conversion rates (52.5% less likely to convert) than the AD group.
+
+### 2. Schedule Ads during late lours, especially for psa group
+
+Later hours significantly increase conversions, and the PSA group benefits even more from later ad exposure.
+
+### 3. Focus advertising efforts on Monday and Tuesday
+
+These two days have the highest conversion rates. Allocate more budget and ad placements to these days for better performance.
+
+### 4. Avoid running Ads on Saturdays
+
+Saturday does not show any significant increase in conversions.
+
+### 5. Keep the interaction term in the model
+
+-   The interaction between test_group and most_ads_hour was significant.
+
+-   This confirms that later ad exposure benefits PSA campaigns more than AD campaigns.
