@@ -8,6 +8,7 @@
 
 ## Overview  
 This project analyzes an A/B test conducted on an advertising campaign to assess the impact of advertisements on user conversion rates. The dataset consists of users who were either exposed to advertisements or public service announcements (PSAs). The primary objective is to determine whether advertisements lead to a significant increase in conversions compared to PSAs.  
+[Dataset Link](https://www.kaggle.com/datasets/faviovaz/marketing-ab-testing/data)
 
 Additionally, the study examines the influence of key factors such as:  
 - The day of the week when the maximum number of ads were displayed  
